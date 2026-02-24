@@ -5,6 +5,7 @@ import RawSnapshotModal from "./components/RawSnapshotModal";
 import StateTimelinePanel from "./components/StateTimelinePanel";
 import ThreadPanel from "./components/ThreadPanel";
 import TopBar from "./components/TopBar";
+import robotPng from "./assets/robot.png";
 import { studioApi } from "./api/studioApi";
 import {
   cleanMermaidSource,
@@ -505,7 +506,7 @@ export default function App() {
   }, [controlsOpen, rawSnapshotOverlayOpen]);
 
   return (
-    <div className="shell">
+    <div className="relative mx-auto max-w-[1680px] px-4 py-5">
       <TopBar
         loading={loading}
         onOpenControls={() => setControlsOpen(true)}
@@ -517,7 +518,7 @@ export default function App() {
         threadsCount={threads.length}
       />
 
-      <main className="workspace">
+      <main className="grid min-h-[calc(100vh-138px)] grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
         <ThreadPanel
           filteredThreads={filteredThreads}
           nestedThreads={nestedThreads}
@@ -554,8 +555,24 @@ export default function App() {
       </main>
 
       {!controlsOpen && (
-        <button className="floating-controls-btn" onClick={() => setControlsOpen(true)}>
-          Open Execution Controls
+        <button
+          type="button"
+          aria-label="Open Execution Controls"
+          title="Open Execution Controls"
+          className="group fixed bottom-5 right-5 z-40 rounded-full p-0 transition-transform duration-200 hover:scale-105"
+          onClick={() => setControlsOpen(true)}
+        >
+          <span className="pointer-events-none absolute -inset-4 -z-10 rounded-full bg-[conic-gradient(from_90deg,_#38bdf8,_#22d3ee,_#34d399,_#60a5fa,_#38bdf8)] opacity-80 blur-md animate-[spin_2.4s_linear_infinite]" />
+          <span className="pointer-events-none absolute -inset-2 -z-10 rounded-full border-2 border-cyan-300/70 border-t-emerald-300 border-r-blue-300 animate-[spin_1.6s_linear_infinite]" />
+          <span className="pointer-events-none absolute -inset-1 -z-10 rounded-full border border-sky-200/70 border-b-teal-300 animate-[spin_2.8s_linear_infinite_reverse]" />
+          <span className="pointer-events-none absolute inset-0 -z-10 rounded-full bg-sky-300/25 blur-sm animate-pulse" />
+          <div className="relative grid h-16 w-16 place-items-center rounded-full border border-sky-300 bg-slate-900/85 shadow-[0_14px_28px_rgba(9,44,63,0.35)]">
+            <img
+              src={robotPng}
+              alt="Open Execution Controls"
+              className="h-12 w-12 rounded-full object-contain"
+            />
+          </div>
         </button>
       )}
 
@@ -590,10 +607,7 @@ export default function App() {
         selectedState={selectedState}
       />
 
-      <LoadingOverlay
-        visible={loading}
-        message="Syncing thread history and state timeline..."
-      />
+      <LoadingOverlay visible={loading} message="Syncing thread history and state timeline..." />
     </div>
   );
 }

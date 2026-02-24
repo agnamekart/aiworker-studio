@@ -1,0 +1,93 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply m-0 font-['Manrope','Avenir_Next','Segoe_UI',sans-serif] text-slate-900 antialiased;
+    background:
+      radial-gradient(1200px 540px at -14% -18%, rgba(181, 208, 229, 0.24) 0%, transparent 58%),
+      radial-gradient(980px 420px at 112% -10%, rgba(208, 225, 217, 0.2) 0%, transparent 52%),
+      linear-gradient(180deg, #f4f7f9, #f3f6f8 42%, #f1f4f7 100%);
+    background-attachment: fixed;
+  }
+
+  button {
+    @apply transition-all duration-150;
+  }
+
+  input,
+  select,
+  textarea {
+    @apply rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+  }
+
+  input:focus,
+  select:focus,
+  textarea:focus {
+    @apply border-sky-400 ring-4 ring-sky-200/50;
+  }
+
+  summary {
+    @apply cursor-pointer select-none;
+  }
+
+  pre {
+    @apply whitespace-pre-wrap break-words;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-panel;
+  }
+
+  .badge {
+    @apply rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide;
+  }
+
+  .btn-primary {
+    @apply rounded-xl border border-slate-800 bg-slate-800 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-700;
+  }
+
+  .btn-ghost {
+    @apply rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:border-slate-400 hover:bg-slate-50;
+  }
+}
+
+@keyframes fadein {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0) scale(1.04);
+  }
+}
+
+@keyframes gradientshift {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
