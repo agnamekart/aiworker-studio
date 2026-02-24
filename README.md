@@ -8,9 +8,17 @@ React app for LangGraph runtime operations in this repo:
 - Trigger `/api/langgraph/rerun`
 - Load form defaults from `/api/langgraph/execution-context`
 
+## Environment
+
+Copy `.env.example` to `.env.local` and adjust values as needed.
+
+- `VITE_API_BASE_URL`: API base URL used by the frontend API client.
+- `VITE_DEV_PORT`: optional Vite dev server port.
+- `VITE_DEV_PROXY_TARGET`: optional backend target for Vite dev proxy (`/api`, `/init`, `/stream`).
+
 ## Run
 
-1. Start backend (`ai-worker`) on `http://localhost:8083`
+1. Start backend (`ai-worker`) on your configured host/port (for example `http://localhost:8087`)
 2. Install deps
 
 ```bash
@@ -24,7 +32,7 @@ npm install
 npm run dev
 ```
 
-App runs at `http://localhost:5174` and proxies API calls to `http://localhost:8083`.
+App runs on `VITE_DEV_PORT` (or Vite default if not set). Proxying uses `VITE_DEV_PROXY_TARGET` when configured.
 
 ## Build
 
