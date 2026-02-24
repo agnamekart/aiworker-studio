@@ -16,7 +16,7 @@ export default function StateTimelinePanel({
   stateSections
 }) {
   return (
-    <section className="panel flex h-[calc(100vh-170px)] flex-col bg-gradient-to-b from-slate-50/95 to-white/90">
+    <section className="panel flex h-[calc(100vh-220px)] min-h-[520px] flex-col bg-gradient-to-b from-slate-50/95 to-white/90">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-bold text-slate-800">State Timeline</h2>
       </div>

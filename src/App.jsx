@@ -506,7 +506,7 @@ export default function App() {
   }, [controlsOpen, rawSnapshotOverlayOpen]);
 
   return (
-    <div className="relative mx-auto max-w-[1680px] px-4 py-5">
+    <div className="relative mx-auto max-w-[1680px] px-4 py-5 pb-24">
       <TopBar
         loading={loading}
         onOpenControls={() => setControlsOpen(true)}
@@ -518,7 +518,7 @@ export default function App() {
         threadsCount={threads.length}
       />
 
-      <main className="grid min-h-[calc(100vh-138px)] grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <main className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
         <ThreadPanel
           filteredThreads={filteredThreads}
           nestedThreads={nestedThreads}

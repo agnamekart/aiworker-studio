@@ -13,7 +13,7 @@ export default function ThreadPanel({
   setThreadSort
 }) {
   return (
-    <section className="panel flex h-[calc(100vh-170px)] flex-col">
+    <section className="panel flex h-[calc(100vh-220px)] min-h-[520px] flex-col">
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className="text-lg font-bold text-slate-800">Threads</h2>
         <input
