@@ -12,6 +12,23 @@ export default function ThreadPanel({
   setThreadFilter,
   setThreadSort
 }) {
+  const statusBadgeClass = (status) => {
+    const normalized = String(status || "").toUpperCase();
+    if (normalized === "FAILED") {
+      return "border-rose-200 bg-rose-50 text-rose-700";
+    }
+    if (normalized === "COMPLETED") {
+      return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    }
+    if (normalized === "RUNNING" || normalized === "QUEUED") {
+      return "border-sky-200 bg-sky-50 text-sky-700";
+    }
+    if (normalized === "PAUSED") {
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    }
+    return "border-slate-200 bg-slate-50 text-slate-700";
+  };
+
   return (
     <section className="panel flex h-[calc(100vh-220px)] min-h-[520px] flex-col">
       <div className="mb-3 flex items-center justify-between gap-2">
@@ -50,6 +67,11 @@ export default function ThreadPanel({
             <span className="badge border-slate-200 bg-white text-slate-700">
               {selectedThread.latestSnapshot?.node ?? "unknown"}
             </span>
+            {selectedThread.runStatus && (
+              <span className={`badge ${statusBadgeClass(selectedThread.runStatus)}`}>
+                {selectedThread.runStatus}
+              </span>
+            )}
             <span className="badge border-slate-200 bg-white text-slate-700">{selectedThread.threadType}</span>
           </div>
         </div>
@@ -95,6 +117,11 @@ export default function ThreadPanel({
               <span className="block text-xs text-slate-600">{thread.snapshotCount} state(s)</span>
               <span className="block text-xs text-amber-700">Campaign: {thread.campaignId ?? "unknown"}</span>
               <span className="block text-xs text-sky-700">Domain: {thread.domainName ?? "unknown"}</span>
+              {thread.runStatus && (
+                <span className="mt-1 block text-xs text-slate-600">
+                  Run: <span className={`badge ${statusBadgeClass(thread.runStatus)}`}>{thread.runStatus}</span>
+                </span>
+              )}
               <button
                 type="button"
                 className="mt-2 rounded-md border border-slate-300 bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-700 hover:bg-white"

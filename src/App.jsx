@@ -157,17 +157,69 @@ export default function App() {
 
   const executionSnapshots = selectedExecution?.snapshots ?? [];
 
-  const selectedStatePosition = useMemo(() => {
-    if (!selectedState || executionSnapshots.length === 0) {
+  const timelineEntries = useMemo(() => {
+    const nodeExecutions = selectedThread?.domainGraphNodeExecutions ?? [];
+    if (nodeExecutions.length > 0) {
+      const snapshotIndexesByNode = new Map();
+      for (const snapshot of executionSnapshots) {
+        const list = snapshotIndexesByNode.get(snapshot.node) ?? [];
+        list.push(snapshot.index);
+        snapshotIndexesByNode.set(snapshot.node, list);
+      }
+      const matchedPerNode = new Map();
+
+      return nodeExecutions.map((nodeExecution, index) => {
+        const nodeName = nodeExecution.nodeName;
+        const indexes = snapshotIndexesByNode.get(nodeName) ?? [];
+        const usedCount = matchedPerNode.get(nodeName) ?? 0;
+        const snapshotIndex = indexes[usedCount] ?? null;
+        matchedPerNode.set(nodeName, usedCount + 1);
+        const matchingSnapshot =
+          typeof snapshotIndex === "number"
+            ? executionSnapshots.find((snapshot) => snapshot.index === snapshotIndex) ?? null
+            : null;
+        return {
+          key: nodeExecution.id ? `node_execution_${nodeExecution.id}` : `node_execution_${index}`,
+          node: nodeName,
+          status: nodeExecution.status,
+          attemptNo: nodeExecution.attemptNo,
+          rowsWritten: nodeExecution.rowsWritten,
+          errorMessage: nodeExecution.errorMessage,
+          checkpoint: matchingSnapshot?.checkpoint ?? null,
+          snapshotIndex,
+          isResumePhase: matchingSnapshot?.isResumePhase ?? null,
+          phase: matchingSnapshot?.phase ?? null,
+          source: "nodeExecution"
+        };
+      });
+    }
+
+    return executionSnapshots.map((snapshot) => ({
+      key: snapshot.key,
+      node: snapshot.node,
+      status: null,
+      attemptNo: null,
+      rowsWritten: null,
+      errorMessage: null,
+      checkpoint: snapshot.checkpoint,
+      snapshotIndex: snapshot.index,
+      isResumePhase: snapshot.isResumePhase,
+      phase: snapshot.phase,
+      source: "snapshot"
+    }));
+  }, [selectedThread, executionSnapshots]);
+
+  const selectedTimelinePosition = useMemo(() => {
+    if (!selectedState || timelineEntries.length === 0) {
       return 0;
     }
-    const index = executionSnapshots.findIndex((snapshot) => snapshot.key === selectedState.key);
+    const index = timelineEntries.findIndex((entry) => entry.snapshotIndex === selectedState.index);
     return index >= 0 ? index + 1 : 0;
-  }, [selectedState, executionSnapshots]);
+  }, [selectedState, timelineEntries]);
 
   const selectedExecutionUniqueNodeCount = useMemo(
-    () => new Set(executionSnapshots.map((snapshot) => snapshot.node)).size,
-    [executionSnapshots]
+    () => new Set(timelineEntries.map((entry) => entry.node)).size,
+    [timelineEntries]
   );
 
   function applyContextToForms(context) {
@@ -540,13 +592,14 @@ export default function App() {
 
         <StateTimelinePanel
           executionSnapshots={executionSnapshots}
+          timelineEntries={timelineEntries}
           onOpenRawSnapshot={() => setRawSnapshotOverlayOpen(true)}
           onSelectState={setSelectedStateIndex}
           selectedExecution={selectedExecution}
           selectedExecutionUniqueNodeCount={selectedExecutionUniqueNodeCount}
           selectedSectionValue={selectedSectionValue}
           selectedState={selectedState}
-          selectedStatePosition={selectedStatePosition}
+          selectedStatePosition={selectedTimelinePosition}
           selectedStateSectionKey={selectedStateSectionKey}
           setSelectedStateSectionKey={setSelectedStateSectionKey}
           stateOverview={stateOverview}

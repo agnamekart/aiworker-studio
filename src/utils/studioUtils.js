@@ -318,6 +318,10 @@ export function normalizeThread(entry) {
   const threadId = entry[0];
   const rawExecutions = Array.isArray(entry[1]) ? entry[1] : [];
   const threadMeta = isPlainObject(entry[2]) ? entry[2] : {};
+  const domainGraphExecution = normalizeDomainGraphExecution(threadMeta.domainGraphExecution);
+  const domainGraphNodeExecutions = normalizeDomainGraphNodeExecutions(
+    threadMeta.domainGraphNodeExecutions
+  );
   const executions = rawExecutions.map((execution, idx) => normalizeExecution(execution, idx));
   const snapshotsFlat = executions.flatMap((execution) => execution.snapshots);
   const lineage = extractThreadLineageFromSnapshots(snapshotsFlat);
@@ -344,10 +348,76 @@ export function normalizeThread(entry) {
     parentCampaignId: lineage.parentCampaignId,
     runKind: lineage.runKind,
     threadType: lineage.threadType,
+    runStatus: domainGraphExecution.status ?? null,
+    domainGraphExecution,
+    domainGraphNodeExecutions,
     latestSnapshot,
     latestSavedAtMs,
     snapshotCount: executions.reduce((sum, ex) => sum + ex.snapshots.length, 0)
   };
+}
+
+function normalizeDomainGraphExecution(value) {
+  if (!isPlainObject(value)) {
+    return {};
+  }
+
+  const statusRaw = firstDefined(value.status, value.runStatus, value.run_status);
+  const modeRaw = firstDefined(value.mode, value.runMode, value.run_mode);
+  const strategyModeRaw = firstDefined(value.strategyMode, value.strategy_mode);
+
+  return {
+    ...value,
+    status: typeof statusRaw === "string" ? statusRaw.trim().toUpperCase() : undefined,
+    mode: typeof modeRaw === "string" ? modeRaw.trim().toUpperCase() : undefined,
+    strategyMode:
+      typeof strategyModeRaw === "string" ? strategyModeRaw.trim().toUpperCase() : undefined,
+    startNode: firstDefined(value.startNode, value.start_node),
+    currentNode: firstDefined(value.currentNode, value.current_node),
+    lastSuccessNode: firstDefined(value.lastSuccessNode, value.last_success_node),
+    lastFailedNode: firstDefined(value.lastFailedNode, value.last_failed_node),
+    errorMessage: firstDefined(value.errorMessage, value.error_message),
+    startedAtMs: toMillis(firstDefined(value.startedAtMs, value.started_at_ms, value.started_at)),
+    endedAtMs: toMillis(firstDefined(value.endedAtMs, value.ended_at_ms, value.ended_at)),
+    createdAtMs: toMillis(firstDefined(value.createdAtMs, value.created_at_ms, value.created_at)),
+    updatedAtMs: toMillis(firstDefined(value.updatedAtMs, value.updated_at_ms, value.updated_at))
+  };
+}
+
+function normalizeDomainGraphNodeExecutions(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter((entry) => isPlainObject(entry))
+    .map((entry, idx) => {
+      const statusRaw = firstDefined(entry.status, entry.nodeStatus, entry.node_status);
+      const writeStrategyRaw = firstDefined(entry.writeStrategy, entry.write_strategy);
+      const nodeName = firstDefined(entry.nodeName, entry.node, entry.name, `node_${idx + 1}`);
+      const attemptNoRaw = firstDefined(entry.attemptNo, entry.attempt_no, 1);
+      const rowsWrittenRaw = firstDefined(entry.rowsWritten, entry.rows_written);
+
+      return {
+        ...entry,
+        nodeName: String(nodeName),
+        status: typeof statusRaw === "string" ? statusRaw.trim().toUpperCase() : "UNKNOWN",
+        writeStrategy:
+          typeof writeStrategyRaw === "string" ? writeStrategyRaw.trim().toUpperCase() : undefined,
+        attemptNo: Number.isFinite(Number(attemptNoRaw)) ? Number(attemptNoRaw) : 1,
+        rowsWritten: Number.isFinite(Number(rowsWrittenRaw)) ? Number(rowsWrittenRaw) : null,
+        errorMessage: firstDefined(entry.errorMessage, entry.error_message),
+        startedAtMs: toMillis(firstDefined(entry.startedAtMs, entry.started_at_ms, entry.started_at)),
+        endedAtMs: toMillis(firstDefined(entry.endedAtMs, entry.ended_at_ms, entry.ended_at)),
+        createdAtMs: toMillis(firstDefined(entry.createdAtMs, entry.created_at_ms, entry.created_at)),
+        updatedAtMs: toMillis(firstDefined(entry.updatedAtMs, entry.updated_at_ms, entry.updated_at))
+      };
+    })
+    .sort((a, b) => {
+      const aTime = firstDefined(a.startedAtMs, a.createdAtMs, a.id, 0);
+      const bTime = firstDefined(b.startedAtMs, b.createdAtMs, b.id, 0);
+      return Number(aTime) - Number(bTime);
+    });
 }
 
 export function firstDefined(...values) {
