@@ -65,6 +65,8 @@ export default function App() {
   const [status, setStatus] = useState({ type: "neutral", message: "Ready" });
   const [controlsOpen, setControlsOpen] = useState(false);
   const [rawSnapshotOverlayOpen, setRawSnapshotOverlayOpen] = useState(false);
+  const [resumeConflict, setResumeConflict] = useState(null);
+  const [resumeConflictBusyAction, setResumeConflictBusyAction] = useState("");
 
   const filteredThreads = useMemo(() => {
     const query = threadFilter.trim().toLowerCase();
@@ -446,6 +448,21 @@ export default function App() {
     }));
   }
 
+  function applyAllowedStartNodes(allowedStartNodes) {
+    if (!Array.isArray(allowedStartNodes) || allowedStartNodes.length === 0) {
+      return;
+    }
+    setStartNodes(allowedStartNodes);
+    setResumeForm((prev) => ({
+      ...prev,
+      startNode: allowedStartNodes.includes(prev.startNode) ? prev.startNode : allowedStartNodes[0]
+    }));
+    setRerunForm((prev) => ({
+      ...prev,
+      startNode: allowedStartNodes.includes(prev.startNode) ? prev.startNode : allowedStartNodes[0]
+    }));
+  }
+
   const stateSections = useMemo(() => getStateSections(selectedState?.payload), [selectedState]);
 
   const selectedSectionValue = useMemo(
@@ -605,10 +622,18 @@ export default function App() {
       payload.webhookData = webhookData;
     }
 
+    await sendResumeRequest(payload, { allowConflictPrompt: true });
+  }
+
+  async function sendResumeRequest(payload, options = {}) {
+    const { allowConflictPrompt = false } = options;
+
     setStatus({ type: "neutral", message: "Sending resume request..." });
 
     try {
       const data = await studioApi.submitResume(payload);
+      setResumeConflict(null);
+      setResumeConflictBusyAction("");
 
       setStatus({
         type: "success",
@@ -617,7 +642,81 @@ export default function App() {
 
       await loadStudioState();
     } catch (error) {
-      setStatus({ type: "error", message: error.message || "Resume failed" });
+      const message = error.message || "Resume failed";
+      applyAllowedStartNodes(error.allowedStartNodes);
+      const conflict = parseResumeConflict(error);
+
+      if (allowConflictPrompt && conflict.hasActiveExecutionConflict) {
+        setResumeConflict({
+          payload,
+          activeExecutionId: conflict.executionId,
+          message,
+          code: error.code || null,
+          allowedStartNodes: Array.isArray(error.allowedStartNodes) ? error.allowedStartNodes : []
+        });
+        setStatus({
+          type: "neutral",
+          message: "Active execution detected. Choose cancel+retry or force rerun."
+        });
+        return;
+      }
+
+      setStatus({ type: "error", message });
+    }
+  }
+
+  async function handleResumeConflictForceRerun() {
+    if (!resumeConflict?.payload) {
+      return;
+    }
+
+    const payload = {
+      ...resumeConflict.payload,
+      forceRerun: true
+    };
+
+    setResumeConflictBusyAction("force_rerun");
+    setResumeConflict(null);
+    await sendResumeRequest(payload, { allowConflictPrompt: false });
+    setResumeConflictBusyAction("");
+  }
+
+  async function handleResumeConflictCancelAndRetry() {
+    if (!resumeConflict?.payload) {
+      return;
+    }
+    if (!resumeConflict.activeExecutionId) {
+      setStatus({
+        type: "error",
+        message: "Could not infer active executionId from error message. Use Force rerun instead."
+      });
+      return;
+    }
+
+    const payload = resumeConflict.payload;
+    const executionId = resumeConflict.activeExecutionId;
+
+    setResumeConflictBusyAction("cancel_retry");
+    setStatus({ type: "neutral", message: `Cancelling execution ${executionId}...` });
+
+    try {
+      const cancelResult = await studioApi.cancelExecution(executionId, {
+        reason: "stale running execution"
+      });
+
+      setStatus({
+        type: "success",
+        message:
+          cancelResult?.message ||
+          `Execution ${executionId} cancelled. Retrying resume...`
+      });
+
+      setResumeConflict(null);
+      await sendResumeRequest(payload, { allowConflictPrompt: true });
+    } catch (error) {
+      setStatus({ type: "error", message: error.message || "Cancel execution failed" });
+    } finally {
+      setResumeConflictBusyAction("");
     }
   }
 
@@ -641,9 +740,36 @@ export default function App() {
       payload.requestedBy = requestedById;
     }
 
-    setStatus({ type: "neutral", message: "Sending rerun request..." });
-
     try {
+      setStatus({ type: "neutral", message: "Running rerun precheck..." });
+
+      const precheckResponse = await studioApi.precheckRerun(payload);
+      const precheck = precheckResponse?.precheck ?? null;
+
+      if (precheck?.allowedStartNodes) {
+        applyAllowedStartNodes(precheck.allowedStartNodes);
+      }
+
+      if (precheck && precheck.canRerun === false) {
+        const missing = Array.isArray(precheck.missingPrerequisites)
+          ? precheck.missingPrerequisites
+          : [];
+        const warnings = Array.isArray(precheck.warnings) ? precheck.warnings : [];
+        const parts = [];
+        if (missing.length > 0) {
+          parts.push(`missing prerequisites: ${missing.join(", ")}`);
+        }
+        if (warnings.length > 0) {
+          parts.push(`warnings: ${warnings.join(", ")}`);
+        }
+        setStatus({
+          type: "error",
+          message: `Rerun precheck failed${parts.length ? ` (${parts.join(" | ")})` : ""}.`
+        });
+        return;
+      }
+
+      setStatus({ type: "neutral", message: "Sending rerun request..." });
       const data = await studioApi.submitRerun(payload);
 
       setStatus({
@@ -653,6 +779,7 @@ export default function App() {
 
       await loadStudioState();
     } catch (error) {
+      applyAllowedStartNodes(error.allowedStartNodes);
       setStatus({ type: "error", message: error.message || "Rerun failed" });
     }
   }
@@ -715,7 +842,7 @@ export default function App() {
   }, [selectedState?.key]);
 
   useEffect(() => {
-    if (!controlsOpen && !rawSnapshotOverlayOpen) {
+    if (!controlsOpen && !rawSnapshotOverlayOpen && !resumeConflict) {
       return undefined;
     }
 
@@ -725,16 +852,22 @@ export default function App() {
           setRawSnapshotOverlayOpen(false);
           return;
         }
+        if (resumeConflict) {
+          if (!resumeConflictBusyAction) {
+            setResumeConflict(null);
+          }
+          return;
+        }
         setControlsOpen(false);
       }
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [controlsOpen, rawSnapshotOverlayOpen]);
+  }, [controlsOpen, rawSnapshotOverlayOpen, resumeConflict, resumeConflictBusyAction]);
 
   useEffect(() => {
-    if (!controlsOpen && !rawSnapshotOverlayOpen) {
+    if (!controlsOpen && !rawSnapshotOverlayOpen && !resumeConflict) {
       document.body.style.overflow = "";
       return undefined;
     }
@@ -743,7 +876,7 @@ export default function App() {
     return () => {
       document.body.style.overflow = "";
     };
-  }, [controlsOpen, rawSnapshotOverlayOpen]);
+  }, [controlsOpen, rawSnapshotOverlayOpen, resumeConflict]);
 
   return (
     <div className="relative mx-auto max-w-[1680px] px-4 py-5 pb-24">
@@ -856,7 +989,118 @@ export default function App() {
         selectedState={selectedState}
       />
 
+      <ResumeConflictModal
+        busyAction={resumeConflictBusyAction}
+        conflict={resumeConflict}
+        onCancelAndRetry={handleResumeConflictCancelAndRetry}
+        onClose={() => {
+          if (!resumeConflictBusyAction) {
+            setResumeConflict(null);
+          }
+        }}
+        onForceRerun={handleResumeConflictForceRerun}
+      />
+
       <LoadingOverlay visible={loading} message="Syncing thread history and state timeline..." />
+    </div>
+  );
+}
+
+function parseResumeConflict(error) {
+  const message = error?.message || "";
+  const normalized = String(message || "").toLowerCase();
+  const hasActiveExecutionConflict =
+    error?.code === "ACTIVE_EXECUTION_EXISTS" ||
+    normalized.includes("active execution") ||
+    normalized.includes("already running") ||
+    normalized.includes("not paused");
+
+  if (!hasActiveExecutionConflict) {
+    return { hasActiveExecutionConflict: false, executionId: null };
+  }
+
+  const executionIdPatterns = [
+    /execution[_\s-]*id[^0-9]*([0-9]+)/i,
+    /execution[^0-9]+([0-9]+)/i
+  ];
+
+  for (const pattern of executionIdPatterns) {
+    const matched = String(message || "").match(pattern);
+    if (matched?.[1]) {
+      return {
+        hasActiveExecutionConflict: true,
+        executionId: Number(matched[1])
+      };
+    }
+  }
+
+  return { hasActiveExecutionConflict: true, executionId: null };
+}
+
+function ResumeConflictModal({
+  busyAction,
+  conflict,
+  onCancelAndRetry,
+  onClose,
+  onForceRerun
+}) {
+  if (!conflict) {
+    return null;
+  }
+
+  const disableActions = Boolean(busyAction);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950/45 p-3 backdrop-blur-sm" onClick={onClose}>
+      <section
+        className="panel mx-auto mt-20 w-full max-w-[720px] border-slate-200 bg-white"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3 className="text-xl font-bold text-slate-800">Active Execution Detected</h3>
+        <p className="mt-2 text-sm text-slate-600">
+          The resume request failed because another execution is active.
+        </p>
+        {conflict.activeExecutionId ? (
+          <p className="mt-1 text-xs text-slate-500">Execution ID: {conflict.activeExecutionId}</p>
+        ) : (
+          <p className="mt-1 text-xs text-amber-700">
+            Execution ID could not be detected from backend error.
+          </p>
+        )}
+
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Backend message</p>
+          {conflict.code && (
+            <p className="mt-1 text-[11px] text-slate-600">Code: {conflict.code}</p>
+          )}
+          <p className="mt-1 break-words text-xs text-slate-700">{conflict.message}</p>
+          {Array.isArray(conflict.allowedStartNodes) && conflict.allowedStartNodes.length > 0 && (
+            <p className="mt-1 break-words text-xs text-slate-600">
+              Allowed start nodes: {conflict.allowedStartNodes.join(", ")}
+            </p>
+          )}
+        </div>
+
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <button className="btn-ghost" disabled={disableActions} onClick={onClose}>
+            Close
+          </button>
+          <button
+            className="rounded-xl border border-rose-600 bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={disableActions || !conflict.activeExecutionId}
+            onClick={onCancelAndRetry}
+          >
+            {busyAction === "cancel_retry" ? "Cancelling..." : "Cancel active execution and retry resume"}
+          </button>
+          <button
+            className="rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={disableActions}
+            onClick={onForceRerun}
+          >
+            {busyAction === "force_rerun" ? "Retrying..." : "Force rerun instead"}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

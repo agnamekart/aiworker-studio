@@ -60,18 +60,43 @@ async function request(path, options = {}) {
   const data = await parseResponse(response, responseType);
 
   if (!response.ok) {
-    const message =
-      data?.error ||
-      data?.message ||
-      `${method} ${url} failed (${response.status})`;
-    throw new Error(message);
+    throw createApiError({
+      data,
+      fallbackMessage: `${method} ${url} failed (${response.status})`,
+      responseStatus: response.status
+    });
   }
 
   if (data && typeof data === "object" && data.success === false) {
-    throw new Error(data.error || data.message || `${method} ${url} failed`);
+    throw createApiError({
+      data,
+      fallbackMessage: `${method} ${url} failed`,
+      responseStatus: response.status
+    });
   }
 
   return data;
+}
+
+function createApiError({ data, fallbackMessage, responseStatus }) {
+  const structuredError =
+    data && typeof data === "object" && data.error && typeof data.error === "object"
+      ? data.error
+      : null;
+  const flatError = data?.error;
+  const message =
+    structuredError?.message ||
+    (typeof flatError === "string" ? flatError : null) ||
+    data?.message ||
+    fallbackMessage;
+  const error = new Error(message);
+  error.status = responseStatus;
+  error.code = structuredError?.code || data?.code || null;
+  error.details = structuredError || null;
+  error.allowedStartNodes = Array.isArray(structuredError?.allowedStartNodes)
+    ? structuredError.allowedStartNodes
+    : [];
+  return error;
 }
 
 export const studioApi = {
@@ -101,6 +126,20 @@ export const studioApi = {
 
   submitRerun(payload) {
     return request("/api/langgraph/rerun", {
+      method: "POST",
+      body: payload
+    });
+  },
+
+  precheckRerun(payload) {
+    return request("/api/langgraph/rerun/precheck", {
+      method: "POST",
+      body: payload
+    });
+  },
+
+  cancelExecution(executionId, payload) {
+    return request(`/api/langgraph/execution/${encodeURIComponent(executionId)}/cancel`, {
       method: "POST",
       body: payload
     });
