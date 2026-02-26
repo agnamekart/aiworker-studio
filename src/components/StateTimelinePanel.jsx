@@ -12,6 +12,7 @@ export default function StateTimelinePanel({
   selectedExecutionUniqueNodeCount,
   selectedSectionValue,
   selectedState,
+  selectedStateIndex,
   selectedStatePosition,
   selectedStateSectionKey,
   setSelectedStateSectionKey,
@@ -82,7 +83,7 @@ export default function StateTimelinePanel({
 
           {timelineEntries.map((entry, index) => {
             const active =
-              typeof entry.snapshotIndex === "number" && selectedState?.index === entry.snapshotIndex;
+              typeof entry.snapshotIndex === "number" && selectedStateIndex === entry.snapshotIndex;
             const canSelectSnapshot = typeof entry.snapshotIndex === "number";
             return (
               <button

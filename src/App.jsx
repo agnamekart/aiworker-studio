@@ -240,9 +240,21 @@ export default function App() {
           snapshots: snapshotsByExecutionId
         };
       }
+
+      // Fallback when snapshot payloads don't include execution ids:
+      // match selected graph execution by dropdown order.
+      const selectedGraphExecutionPosition = graphExecutionsForSelectedThread.findIndex(
+        (execution) => Number(execution?.id) === selectedId
+      );
+      if (selectedGraphExecutionPosition >= 0) {
+        const executionByPosition = selectedThread.executions[selectedGraphExecutionPosition] ?? null;
+        if (executionByPosition) {
+          return executionByPosition;
+        }
+      }
     }
     return selectedThread.executions[0] ?? null;
-  }, [selectedThread, selectedGraphExecutionId]);
+  }, [selectedThread, selectedGraphExecutionId, graphExecutionsForSelectedThread]);
 
   const selectedState = useMemo(() => {
     if (!selectedExecution) {
@@ -262,13 +274,23 @@ export default function App() {
       !isAllExecutionsSelected && selectedGraphExecutionId
         ? selectedGraphExecutionId
         : fallbackLatestExecutionId;
+    const hasScopedNodeExecutions =
+      !isAllExecutionsSelected &&
+      Boolean(executionIdKey) &&
+      Array.isArray(nodesByExecutionId[executionIdKey]) &&
+      nodesByExecutionId[executionIdKey].length > 0;
+
     const nodeExecutions = isAllExecutionsSelected
       ? Object.values(nodesByExecutionId).flatMap((entries) => (Array.isArray(entries) ? entries : []))
-      : (executionIdKey && Array.isArray(nodesByExecutionId[executionIdKey])
-          ? nodesByExecutionId[executionIdKey]
-          : null) ?? selectedThread?.domainGraphNodeExecutions ?? [];
+      : hasScopedNodeExecutions
+        ? nodesByExecutionId[executionIdKey]
+        : [];
     const allThreadSnapshots = selectedThread?.executions?.flatMap((execution) => execution.snapshots) ?? [];
-    const snapshotsForMatching = allThreadSnapshots.length > 0 ? allThreadSnapshots : executionSnapshots;
+    const snapshotsForMatching =
+      isAllExecutionsSelected && allThreadSnapshots.length > 0 ? allThreadSnapshots : executionSnapshots;
+    const snapshotArrayIndexByKey = new Map(
+      executionSnapshots.map((snapshot, index) => [snapshot.key, index])
+    );
 
     if (nodeExecutions.length > 0) {
       const snapshotIndexesByExecutionAndNode = new Map();
@@ -310,6 +332,10 @@ export default function App() {
           typeof snapshotIndex === "number"
             ? snapshotsForMatching.find((snapshot) => snapshot.index === snapshotIndex) ?? null
             : null;
+        const snapshotArrayIndex =
+          !isAllExecutionsSelected && matchingSnapshot
+            ? snapshotArrayIndexByKey.get(matchingSnapshot.key) ?? null
+            : null;
 
         return {
           key: nodeExecution.id ? `node_execution_${nodeExecution.id}` : `node_execution_${index}`,
@@ -321,7 +347,7 @@ export default function App() {
           rowsWritten: nodeExecution.rowsWritten,
           errorMessage: nodeExecution.errorMessage,
           checkpoint: matchingSnapshot?.checkpoint ?? null,
-          snapshotIndex: isAllExecutionsSelected ? null : snapshotIndex,
+          snapshotIndex: snapshotArrayIndex,
           isResumePhase: matchingSnapshot?.isResumePhase ?? null,
           phase: matchingSnapshot?.phase ?? null,
           source: "nodeExecution"
@@ -335,7 +361,7 @@ export default function App() {
       });
     }
 
-    return snapshotsForMatching.map((snapshot) => {
+    return snapshotsForMatching.map((snapshot, index) => {
       return {
         key: snapshot.key,
         node: snapshot.node,
@@ -344,7 +370,7 @@ export default function App() {
         rowsWritten: null,
         errorMessage: null,
         checkpoint: snapshot.checkpoint,
-        snapshotIndex: snapshot.index,
+        snapshotIndex: isAllExecutionsSelected ? null : index,
         isResumePhase: snapshot.isResumePhase,
         phase: snapshot.phase,
         source: "snapshot"
@@ -372,12 +398,12 @@ export default function App() {
   }, [graphExecutionsForSelectedThread, selectedGraphExecutionId]);
 
   const selectedTimelinePosition = useMemo(() => {
-    if (!selectedState || timelineEntries.length === 0) {
+    if (timelineEntries.length === 0) {
       return 0;
     }
-    const index = timelineEntries.findIndex((entry) => entry.snapshotIndex === selectedState.index);
+    const index = timelineEntries.findIndex((entry) => entry.snapshotIndex === selectedStateIndex);
     return index >= 0 ? index + 1 : 0;
-  }, [selectedState, timelineEntries]);
+  }, [selectedStateIndex, timelineEntries]);
 
   const selectedExecutionUniqueNodeCount = useMemo(
     () => new Set(timelineEntries.map((entry) => entry.node)).size,
@@ -768,6 +794,7 @@ export default function App() {
           selectedExecutionUniqueNodeCount={selectedExecutionUniqueNodeCount}
           selectedSectionValue={selectedSectionValue}
           selectedState={selectedState}
+          selectedStateIndex={selectedStateIndex}
           selectedStatePosition={selectedTimelinePosition}
           selectedStateSectionKey={selectedStateSectionKey}
           setSelectedStateSectionKey={setSelectedStateSectionKey}
