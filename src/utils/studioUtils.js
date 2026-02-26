@@ -200,9 +200,20 @@ export function normalizeExecution(rawExecution, executionIndex) {
     };
   });
 
+  const executionDbId = firstDefined(
+    ...snapshots.map((snapshot) =>
+      firstDefined(
+        snapshot?.payload?.execution_id,
+        snapshot?.payload?.executionId,
+        snapshot?.payload?.domain_graph_execution_id
+      )
+    )
+  );
+
   return {
     executionIndex,
     id: `execution_${executionIndex + 1}`,
+    executionDbId: Number.isFinite(Number(executionDbId)) ? Number(executionDbId) : null,
     snapshots
   };
 }
@@ -317,11 +328,35 @@ export function normalizeThread(entry) {
 
   const threadId = entry[0];
   const rawExecutions = Array.isArray(entry[1]) ? entry[1] : [];
-  const threadMeta = isPlainObject(entry[2]) ? entry[2] : {};
-  const domainGraphExecution = normalizeDomainGraphExecution(threadMeta.domainGraphExecution);
-  const domainGraphNodeExecutions = normalizeDomainGraphNodeExecutions(
-    threadMeta.domainGraphNodeExecutions
+  const threadMeta = normalizeThreadMeta(entry[2]);
+  const domainGraphExecutionFallback = normalizeDomainGraphExecution(
+    firstDefined(threadMeta.domainGraphExecution, threadMeta.domain_graph_execution)
   );
+  const domainGraphNodeExecutionsFallback = normalizeDomainGraphNodeExecutions(
+    firstDefined(
+      threadMeta.domainGraphNodeExecutions,
+      threadMeta.domain_graph_node_executions,
+      threadMeta.domainGraphNodeExecution,
+      threadMeta.domain_graph_node_execution
+    )
+  );
+  const domainGraphExecutions = normalizeDomainGraphExecutions(
+    firstDefined(threadMeta.domainGraphExecutions, threadMeta.domain_graph_executions),
+    domainGraphExecutionFallback
+  );
+  const domainGraphExecution = domainGraphExecutions[0] ?? domainGraphExecutionFallback;
+  const domainGraphNodeExecutionsByExecutionId = normalizeDomainGraphNodeExecutionsByExecutionId(
+    firstDefined(
+      threadMeta.domainGraphNodeExecutionsByExecutionId,
+      threadMeta.domain_graph_node_executions_by_execution_id
+    ),
+    domainGraphExecutions,
+    domainGraphNodeExecutionsFallback
+  );
+  const latestExecutionIdKey = toExecutionIdKey(domainGraphExecution?.id);
+  const domainGraphNodeExecutions =
+    (latestExecutionIdKey && domainGraphNodeExecutionsByExecutionId[latestExecutionIdKey]) ||
+    domainGraphNodeExecutionsFallback;
   const executions = rawExecutions.map((execution, idx) => normalizeExecution(execution, idx));
   const snapshotsFlat = executions.flatMap((execution) => execution.snapshots);
   const lineage = extractThreadLineageFromSnapshots(snapshotsFlat);
@@ -339,6 +374,26 @@ export function normalizeThread(entry) {
     executions[0]?.snapshots?.[executions[0].snapshots.length - 1] ?? null;
   const latestSnapshot = latestSnapshotByTime ?? fallbackLatestSnapshot;
   const latestSavedAtMs = toMillis(firstDefined(threadMeta.latestSavedAtMs, latestSnapshot?.savedAtMs));
+  const lastActivityAtMs = toMillis(
+    firstDefined(
+      domainGraphExecution.updatedAtMs,
+      domainGraphExecution.endedAtMs,
+      domainGraphExecution.startedAtMs,
+      latestSavedAtMs
+    )
+  );
+  const snapshotCount = executions.reduce((sum, ex) => sum + ex.snapshots.length, 0);
+  const nodeExecutionCountAll = Object.values(domainGraphNodeExecutionsByExecutionId).reduce(
+    (sum, entries) => sum + entries.length,
+    0
+  );
+  const fallbackNodeExecutionCount = domainGraphNodeExecutions.length;
+  const stateCount =
+    nodeExecutionCountAll > 0
+      ? nodeExecutionCountAll
+      : fallbackNodeExecutionCount > 0
+        ? fallbackNodeExecutionCount
+        : snapshotCount;
 
   return {
     threadId,
@@ -348,13 +403,33 @@ export function normalizeThread(entry) {
     parentCampaignId: lineage.parentCampaignId,
     runKind: lineage.runKind,
     threadType: lineage.threadType,
+    schemaVersion: firstDefined(threadMeta.schemaVersion, threadMeta.schema_version, 1),
     runStatus: domainGraphExecution.status ?? null,
+    domainGraphExecutions,
     domainGraphExecution,
+    domainGraphNodeExecutionsByExecutionId,
     domainGraphNodeExecutions,
     latestSnapshot,
     latestSavedAtMs,
-    snapshotCount: executions.reduce((sum, ex) => sum + ex.snapshots.length, 0)
+    lastActivityAtMs,
+    snapshotCount,
+    stateCount
   };
+}
+
+function normalizeThreadMeta(value) {
+  if (isPlainObject(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return isPlainObject(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
 }
 
 function normalizeDomainGraphExecution(value) {
@@ -377,6 +452,7 @@ function normalizeDomainGraphExecution(value) {
     lastSuccessNode: firstDefined(value.lastSuccessNode, value.last_success_node),
     lastFailedNode: firstDefined(value.lastFailedNode, value.last_failed_node),
     errorMessage: firstDefined(value.errorMessage, value.error_message),
+    lgThreadId: firstDefined(value.lgThreadId, value.lg_thread_id),
     startedAtMs: toMillis(firstDefined(value.startedAtMs, value.started_at_ms, value.started_at)),
     endedAtMs: toMillis(firstDefined(value.endedAtMs, value.ended_at_ms, value.ended_at)),
     createdAtMs: toMillis(firstDefined(value.createdAtMs, value.created_at_ms, value.created_at)),
@@ -385,11 +461,17 @@ function normalizeDomainGraphExecution(value) {
 }
 
 function normalizeDomainGraphNodeExecutions(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
+  const rawEntries = Array.isArray(value)
+    ? value
+    : isPlainObject(value)
+      ? Array.isArray(value.items)
+        ? value.items
+        : Array.isArray(value.rows)
+          ? value.rows
+          : [value]
+      : [];
 
-  return value
+  return rawEntries
     .filter((entry) => isPlainObject(entry))
     .map((entry, idx) => {
       const statusRaw = firstDefined(entry.status, entry.nodeStatus, entry.node_status);
@@ -397,9 +479,12 @@ function normalizeDomainGraphNodeExecutions(value) {
       const nodeName = firstDefined(entry.nodeName, entry.node, entry.name, `node_${idx + 1}`);
       const attemptNoRaw = firstDefined(entry.attemptNo, entry.attempt_no, 1);
       const rowsWrittenRaw = firstDefined(entry.rowsWritten, entry.rows_written);
+      const executionIdRaw = firstDefined(entry.executionId, entry.execution_id);
 
       return {
         ...entry,
+        executionId: Number.isFinite(Number(executionIdRaw)) ? Number(executionIdRaw) : null,
+        lgThreadId: firstDefined(entry.lgThreadId, entry.lg_thread_id),
         nodeName: String(nodeName),
         status: typeof statusRaw === "string" ? statusRaw.trim().toUpperCase() : "UNKNOWN",
         writeStrategy:
@@ -418,6 +503,73 @@ function normalizeDomainGraphNodeExecutions(value) {
       const bTime = firstDefined(b.startedAtMs, b.createdAtMs, b.id, 0);
       return Number(aTime) - Number(bTime);
     });
+}
+
+function normalizeDomainGraphExecutions(value, fallbackSingleExecution) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : isPlainObject(value)
+      ? Array.isArray(value.items)
+        ? value.items
+        : [value]
+      : [];
+
+  const normalized = rawItems
+    .filter((item) => isPlainObject(item))
+    .map((item) => normalizeDomainGraphExecution(item))
+    .filter((item) => isPlainObject(item) && Object.keys(item).length > 0);
+
+  if (normalized.length > 0) {
+    return normalized.sort((a, b) => {
+      const aTime = firstDefined(a.updatedAtMs, a.startedAtMs, a.createdAtMs, a.id, 0);
+      const bTime = firstDefined(b.updatedAtMs, b.startedAtMs, b.createdAtMs, b.id, 0);
+      return Number(bTime) - Number(aTime);
+    });
+  }
+
+  if (isPlainObject(fallbackSingleExecution) && Object.keys(fallbackSingleExecution).length > 0) {
+    return [fallbackSingleExecution];
+  }
+
+  return [];
+}
+
+function normalizeDomainGraphNodeExecutionsByExecutionId(value, executions, fallbackNodes) {
+  const out = {};
+
+  if (isPlainObject(value)) {
+    for (const [executionId, rawEntries] of Object.entries(value)) {
+      const key = toExecutionIdKey(executionId);
+      if (!key) {
+        continue;
+      }
+      out[key] = normalizeDomainGraphNodeExecutions(rawEntries);
+    }
+  }
+
+  if (Object.keys(out).length > 0) {
+    return out;
+  }
+
+  const fallbackExecutionId = toExecutionIdKey(executions?.[0]?.id);
+  if (fallbackExecutionId) {
+    out[fallbackExecutionId] = normalizeDomainGraphNodeExecutions(fallbackNodes);
+  }
+  return out;
+}
+
+function toExecutionIdKey(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const normalized = Number(value);
+  if (Number.isFinite(normalized)) {
+    return String(normalized);
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    return value.trim();
+  }
+  return null;
 }
 
 export function firstDefined(...values) {
@@ -459,11 +611,11 @@ export function toMillis(value) {
 }
 
 export function compareThreadsBySort(a, b, threadSort) {
-  if (threadSort === "id_asc") {
-    return a.threadId.localeCompare(b.threadId);
+  if (threadSort === "time_desc") {
+    const diff = (b.lastActivityAtMs ?? 0) - (a.lastActivityAtMs ?? 0);
+    return diff !== 0 ? diff : a.threadId.localeCompare(b.threadId);
   }
-  const diff = b.snapshotCount - a.snapshotCount;
-  return diff !== 0 ? diff : a.threadId.localeCompare(b.threadId);
+  return a.threadId.localeCompare(b.threadId);
 }
 
 export function toRequestedById(value) {

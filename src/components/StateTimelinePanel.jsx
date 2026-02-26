@@ -2,10 +2,12 @@ import ParsedValue from "./ParsedValue";
 import { shortenId } from "../utils/studioUtils";
 
 export default function StateTimelinePanel({
-  executionSnapshots,
   timelineEntries = [],
   onOpenRawSnapshot,
   onSelectState,
+  graphExecutions = [],
+  selectedGraphExecutionId,
+  onSelectGraphExecution,
   selectedExecution,
   selectedExecutionUniqueNodeCount,
   selectedSectionValue,
@@ -37,10 +39,26 @@ export default function StateTimelinePanel({
     <section className="panel flex h-[calc(100vh-220px)] min-h-[520px] flex-col bg-gradient-to-b from-slate-50/95 to-white/90">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-bold text-slate-800">State Timeline</h2>
+        {graphExecutions.length > 0 && (
+          <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Execution
+            <select
+              className="min-w-[180px]"
+              value={selectedGraphExecutionId}
+              onChange={(event) => onSelectGraphExecution?.(event.target.value)}
+            >
+              {graphExecutions.map((execution, index) => (
+                <option key={execution.id ?? `${execution.startedAtMs}_${execution.mode}`} value={String(execution.id)}>
+                  {`Execution ${graphExecutions.length - index} | ${execution.status ?? "UNKNOWN"}`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className="sticky top-0 z-10 mb-3 grid grid-cols-1 gap-2 rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 p-2 sm:grid-cols-[max-content_max-content_max-content_1fr] sm:items-center">
-        <span className="badge border-sky-200 bg-sky-50 text-sky-700">States: {executionSnapshots.length}</span>
+        <span className="badge border-sky-200 bg-sky-50 text-sky-700">States: {timelineEntries.length}</span>
         <span className="badge border-sky-200 bg-sky-50 text-sky-700">Nodes: {selectedExecutionUniqueNodeCount}</span>
         <span className="badge border-sky-200 bg-sky-50 text-sky-700">
           Position: {selectedStatePosition || 0}/{timelineEntries.length || 0}
@@ -86,19 +104,9 @@ export default function StateTimelinePanel({
                 <span className="block text-xs font-bold text-slate-800">{entry.node}</span>
                 <span className="mt-1 flex items-center justify-between gap-2">
                   <span className="text-[10px] font-semibold text-slate-600">Step {index + 1}</span>
-                  {entry.source === "nodeExecution" ? (
+                  <div className="flex items-center gap-1">
                     <span className={`badge ${statusBadgeClass(entry.status)}`}>{entry.status || "UNKNOWN"}</span>
-                  ) : (
-                    <span
-                      className={`badge ${
-                        entry.isResumePhase
-                          ? "border-amber-200 bg-amber-50 text-amber-700"
-                          : "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      }`}
-                    >
-                      {entry.isResumePhase ? `RESUME P${entry.phase}` : `BASE P${entry.phase}`}
-                    </span>
-                  )}
+                  </div>
                   <span className="badge border-slate-200 bg-slate-50 text-sky-700">
                     {shortenId(entry.checkpoint || "no-checkpoint", 6)}
                   </span>

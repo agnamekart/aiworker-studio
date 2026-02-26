@@ -33,11 +33,12 @@ export default function App() {
   const [graphRenderError, setGraphRenderError] = useState("");
   const [loading, setLoading] = useState(false);
   const [threadFilter, setThreadFilter] = useState("");
-  const [threadSort, setThreadSort] = useState("states_desc");
+  const [threadSort, setThreadSort] = useState("time_desc");
 
   const [selectedThreadId, setSelectedThreadId] = useState("");
   const [selectedStateIndex, setSelectedStateIndex] = useState(0);
   const [selectedStateSectionKey, setSelectedStateSectionKey] = useState("__overview");
+  const [selectedGraphExecutionId, setSelectedGraphExecutionId] = useState("");
 
   const [startNodes, setStartNodes] = useState(DEFAULT_NODES);
 
@@ -137,16 +138,111 @@ export default function App() {
   );
 
   const totalStates = useMemo(
-    () => threads.reduce((sum, thread) => sum + thread.snapshotCount, 0),
+    () => threads.reduce((sum, thread) => sum + (thread.stateCount ?? thread.snapshotCount ?? 0), 0),
     [threads]
   );
+
+  const graphExecutionsForSelectedThread = useMemo(() => {
+    if (!selectedThread) {
+      return [];
+    }
+    const byId = new Map();
+
+    const addExecution = (execution) => {
+      const id = execution?.id;
+      if (id === null || id === undefined || id === "") {
+        return;
+      }
+      const key = String(id);
+      const existing = byId.get(key);
+      if (!existing) {
+        byId.set(key, execution);
+        return;
+      }
+      // Prefer richer execution metadata if available later.
+      const existingKeys = Object.keys(existing ?? {}).length;
+      const nextKeys = Object.keys(execution ?? {}).length;
+      if (nextKeys > existingKeys) {
+        byId.set(key, execution);
+      }
+    };
+
+    const explicitExecutions = Array.isArray(selectedThread.domainGraphExecutions)
+      ? selectedThread.domainGraphExecutions
+      : [];
+    explicitExecutions.forEach(addExecution);
+
+    if (selectedThread.domainGraphExecution && Object.keys(selectedThread.domainGraphExecution).length > 0) {
+      addExecution(selectedThread.domainGraphExecution);
+    }
+
+    const nodesByExecutionId = selectedThread.domainGraphNodeExecutionsByExecutionId ?? {};
+    for (const [executionId, entries] of Object.entries(nodesByExecutionId)) {
+      if (!executionId) {
+        continue;
+      }
+      const firstEntry = Array.isArray(entries) && entries.length > 0 ? entries[0] : null;
+      addExecution({
+        id: Number.isFinite(Number(executionId)) ? Number(executionId) : executionId,
+        status: firstEntry?.status ?? "UNKNOWN",
+        startedAtMs: firstEntry?.startedAtMs ?? null,
+        endedAtMs: firstEntry?.endedAtMs ?? null
+      });
+    }
+
+    const snapshotExecutionIds = selectedThread.executions
+      .map((execution) => execution.executionDbId)
+      .filter((id) => id !== null && id !== undefined);
+    snapshotExecutionIds.forEach((id) =>
+      addExecution({
+        id,
+        status: "UNKNOWN"
+      })
+    );
+
+    return Array.from(byId.values()).sort((a, b) => {
+      const aId = Number(a?.id);
+      const bId = Number(b?.id);
+      if (Number.isFinite(aId) && Number.isFinite(bId)) {
+        return bId - aId;
+      }
+      return String(b?.id ?? "").localeCompare(String(a?.id ?? ""));
+    });
+  }, [selectedThread]);
 
   const selectedExecution = useMemo(() => {
     if (!selectedThread) {
       return null;
     }
+    if (selectedGraphExecutionId === "__ALL__") {
+      return selectedThread.executions[0] ?? null;
+    }
+    const selectedId = Number(selectedGraphExecutionId);
+    if (Number.isFinite(selectedId)) {
+      const matched = selectedThread.executions.find((execution) => execution.executionDbId === selectedId);
+      if (matched) {
+        return matched;
+      }
+
+      const snapshotsByExecutionId = selectedThread.executions
+        .flatMap((execution) => execution.snapshots)
+        .filter((snapshot) => {
+          const payload = snapshot?.payload;
+          const snapshotExecutionId =
+            payload?.execution_id ?? payload?.executionId ?? payload?.domain_graph_execution_id ?? null;
+          return Number(snapshotExecutionId) === selectedId;
+        });
+      if (snapshotsByExecutionId.length > 0) {
+        return {
+          executionIndex: -1,
+          id: `execution_${selectedId}`,
+          executionDbId: selectedId,
+          snapshots: snapshotsByExecutionId
+        };
+      }
+    }
     return selectedThread.executions[0] ?? null;
-  }, [selectedThread]);
+  }, [selectedThread, selectedGraphExecutionId]);
 
   const selectedState = useMemo(() => {
     if (!selectedExecution) {
@@ -158,56 +254,122 @@ export default function App() {
   const executionSnapshots = selectedExecution?.snapshots ?? [];
 
   const timelineEntries = useMemo(() => {
-    const nodeExecutions = selectedThread?.domainGraphNodeExecutions ?? [];
+    const nodesByExecutionId = selectedThread?.domainGraphNodeExecutionsByExecutionId ?? {};
+    const isAllExecutionsSelected = selectedGraphExecutionId === "__ALL__";
+    const fallbackLatestExecutionId =
+      graphExecutionsForSelectedThread[0]?.id != null ? String(graphExecutionsForSelectedThread[0].id) : "";
+    const executionIdKey =
+      !isAllExecutionsSelected && selectedGraphExecutionId
+        ? selectedGraphExecutionId
+        : fallbackLatestExecutionId;
+    const nodeExecutions = isAllExecutionsSelected
+      ? Object.values(nodesByExecutionId).flatMap((entries) => (Array.isArray(entries) ? entries : []))
+      : (executionIdKey && Array.isArray(nodesByExecutionId[executionIdKey])
+          ? nodesByExecutionId[executionIdKey]
+          : null) ?? selectedThread?.domainGraphNodeExecutions ?? [];
+    const allThreadSnapshots = selectedThread?.executions?.flatMap((execution) => execution.snapshots) ?? [];
+    const snapshotsForMatching = allThreadSnapshots.length > 0 ? allThreadSnapshots : executionSnapshots;
+
     if (nodeExecutions.length > 0) {
+      const snapshotIndexesByExecutionAndNode = new Map();
       const snapshotIndexesByNode = new Map();
-      for (const snapshot of executionSnapshots) {
-        const list = snapshotIndexesByNode.get(snapshot.node) ?? [];
-        list.push(snapshot.index);
-        snapshotIndexesByNode.set(snapshot.node, list);
+      for (const snapshot of snapshotsForMatching) {
+        const payload = snapshot?.payload;
+        const snapshotExecutionId =
+          payload?.execution_id ?? payload?.executionId ?? payload?.domain_graph_execution_id ?? null;
+
+        const scopedKey = `${snapshotExecutionId ?? "unknown"}::${snapshot.node}`;
+        const scopedList = snapshotIndexesByExecutionAndNode.get(scopedKey) ?? [];
+        scopedList.push(snapshot.index);
+        snapshotIndexesByExecutionAndNode.set(scopedKey, scopedList);
+
+        const nodeList = snapshotIndexesByNode.get(snapshot.node) ?? [];
+        nodeList.push(snapshot.index);
+        snapshotIndexesByNode.set(snapshot.node, nodeList);
       }
+
+      const matchedPerExecutionAndNode = new Map();
       const matchedPerNode = new Map();
 
-      return nodeExecutions.map((nodeExecution, index) => {
+      const nodeExecutionEntries = nodeExecutions.map((nodeExecution, index) => {
         const nodeName = nodeExecution.nodeName;
-        const indexes = snapshotIndexesByNode.get(nodeName) ?? [];
-        const usedCount = matchedPerNode.get(nodeName) ?? 0;
-        const snapshotIndex = indexes[usedCount] ?? null;
-        matchedPerNode.set(nodeName, usedCount + 1);
+        const scopedKey = `${nodeExecution.executionId ?? "unknown"}::${nodeName}`;
+
+        const scopedIndexes = snapshotIndexesByExecutionAndNode.get(scopedKey) ?? [];
+        const scopedUsedCount = matchedPerExecutionAndNode.get(scopedKey) ?? 0;
+        const scopedSnapshotIndex = scopedIndexes[scopedUsedCount] ?? null;
+        matchedPerExecutionAndNode.set(scopedKey, scopedUsedCount + 1);
+
+        const fallbackIndexes = snapshotIndexesByNode.get(nodeName) ?? [];
+        const fallbackUsedCount = matchedPerNode.get(nodeName) ?? 0;
+        const fallbackSnapshotIndex = fallbackIndexes[fallbackUsedCount] ?? null;
+        matchedPerNode.set(nodeName, fallbackUsedCount + 1);
+
+        const snapshotIndex = scopedSnapshotIndex ?? fallbackSnapshotIndex;
         const matchingSnapshot =
           typeof snapshotIndex === "number"
-            ? executionSnapshots.find((snapshot) => snapshot.index === snapshotIndex) ?? null
+            ? snapshotsForMatching.find((snapshot) => snapshot.index === snapshotIndex) ?? null
             : null;
+
         return {
           key: nodeExecution.id ? `node_execution_${nodeExecution.id}` : `node_execution_${index}`,
           node: nodeName,
+          executionId: nodeExecution.executionId ?? null,
+          startedAtMs: nodeExecution.startedAtMs ?? null,
           status: nodeExecution.status,
           attemptNo: nodeExecution.attemptNo,
           rowsWritten: nodeExecution.rowsWritten,
           errorMessage: nodeExecution.errorMessage,
           checkpoint: matchingSnapshot?.checkpoint ?? null,
-          snapshotIndex,
+          snapshotIndex: isAllExecutionsSelected ? null : snapshotIndex,
           isResumePhase: matchingSnapshot?.isResumePhase ?? null,
           phase: matchingSnapshot?.phase ?? null,
           source: "nodeExecution"
         };
       });
+
+      return [...nodeExecutionEntries].sort((a, b) => {
+        const aOrder = Number(a.startedAtMs ?? 0);
+        const bOrder = Number(b.startedAtMs ?? 0);
+        return aOrder - bOrder;
+      });
     }
 
-    return executionSnapshots.map((snapshot) => ({
-      key: snapshot.key,
-      node: snapshot.node,
-      status: null,
-      attemptNo: null,
-      rowsWritten: null,
-      errorMessage: null,
-      checkpoint: snapshot.checkpoint,
-      snapshotIndex: snapshot.index,
-      isResumePhase: snapshot.isResumePhase,
-      phase: snapshot.phase,
-      source: "snapshot"
-    }));
-  }, [selectedThread, executionSnapshots]);
+    return snapshotsForMatching.map((snapshot) => {
+      return {
+        key: snapshot.key,
+        node: snapshot.node,
+        status: null,
+        attemptNo: null,
+        rowsWritten: null,
+        errorMessage: null,
+        checkpoint: snapshot.checkpoint,
+        snapshotIndex: snapshot.index,
+        isResumePhase: snapshot.isResumePhase,
+        phase: snapshot.phase,
+        source: "snapshot"
+      };
+    });
+  }, [selectedThread, executionSnapshots, selectedGraphExecutionId, graphExecutionsForSelectedThread]);
+
+  useEffect(() => {
+    const availableIds = graphExecutionsForSelectedThread
+      .map((execution) => execution?.id)
+      .filter((id) => id !== null && id !== undefined)
+      .map((id) => String(id));
+
+    if (availableIds.length === 0) {
+      if (selectedGraphExecutionId !== "") {
+        setSelectedGraphExecutionId("");
+      }
+      return;
+    }
+
+    if (!selectedGraphExecutionId || !availableIds.includes(selectedGraphExecutionId)) {
+      setSelectedGraphExecutionId(availableIds[0]);
+      setSelectedStateIndex(0);
+    }
+  }, [graphExecutionsForSelectedThread, selectedGraphExecutionId]);
 
   const selectedTimelinePosition = useMemo(() => {
     if (!selectedState || timelineEntries.length === 0) {
@@ -581,6 +743,7 @@ export default function App() {
           onSelectThread={(threadId) => {
             setSelectedThreadId(threadId);
             setSelectedStateIndex(0);
+            setSelectedGraphExecutionId("");
           }}
           selectedThread={selectedThread}
           selectedThreadId={selectedThreadId}
@@ -591,10 +754,16 @@ export default function App() {
         />
 
         <StateTimelinePanel
-          executionSnapshots={executionSnapshots}
           timelineEntries={timelineEntries}
           onOpenRawSnapshot={() => setRawSnapshotOverlayOpen(true)}
           onSelectState={setSelectedStateIndex}
+          graphExecutions={graphExecutionsForSelectedThread}
+          selectedGraphExecutionId={selectedGraphExecutionId}
+          onSelectGraphExecution={(value) => {
+            setSelectedGraphExecutionId(value);
+            setSelectedStateIndex(0);
+            setSelectedStateSectionKey("__overview");
+          }}
           selectedExecution={selectedExecution}
           selectedExecutionUniqueNodeCount={selectedExecutionUniqueNodeCount}
           selectedSectionValue={selectedSectionValue}
