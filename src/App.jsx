@@ -503,7 +503,7 @@ export default function App() {
 
   function sortToApiParams(sort) {
     if (sort === "id_asc") return { sortBy: "thread_name", sortDir: "asc" };
-    return { sortBy: "latest_saved_at", sortDir: "desc" };
+    return { sortBy: "campaign_id", sortDir: "desc" };
   }
 
   async function loadStudioState(pageOverride, sortOverride) {

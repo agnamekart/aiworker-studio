@@ -52,11 +52,28 @@ export default function TopBar({
 
           {/* Stats pills */}
           <div className="mt-5 flex flex-wrap gap-2">
-            <StatPill label="Threads" value={threadsCount} />
-            <StatPill label="Executions" value={totalExecutions} />
-            <StatPill label="States" value={totalStates} />
+            <StatPill
+              label="Threads"
+              value={threadsCount}
+              icon={<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><circle cx="9" cy="7" r="4" stroke="currentColor" strokeWidth="2"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>}
+            />
+            <StatPill
+              label="Executions"
+              value={totalExecutions}
+              icon={<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M5 3l14 9-14 9V3z" fill="currentColor"/></svg>}
+            />
+            <StatPill
+              label="States"
+              value={totalStates}
+              icon={<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1" fill="currentColor"/><rect x="14" y="3" width="7" height="7" rx="1" fill="currentColor" opacity=".6"/><rect x="3" y="14" width="7" height="7" rx="1" fill="currentColor" opacity=".6"/><rect x="14" y="14" width="7" height="7" rx="1" fill="currentColor" opacity=".3"/></svg>}
+            />
             {selectedThreadId && (
-              <StatPill label="Selected" value={selectedThreadId} mono truncate />
+              <StatPill
+                label="Selected"
+                value={selectedThreadId}
+                mono truncate
+                icon={<svg width="10" height="10" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>}
+              />
             )}
           </div>
         </div>
@@ -73,7 +90,7 @@ export default function TopBar({
           >
             {loading
               ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              : <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M13.65 2.35A8 8 0 1 0 15 8h-2a6 6 0 1 1-1.05-3.35L9 7h6V1l-1.35 1.35z" fill="currentColor"/></svg>
+              : <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4C7.58 4 4 7.58 4 12s3.58 8 8 8 8-3.58 8-8h-2c0 3.31-2.69 6-6 6s-6-2.69-6-6 2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L11 10h7V3l-2.35 3.35z" fill="currentColor"/></svg>
             }
             Refresh Data
           </button>
@@ -83,14 +100,24 @@ export default function TopBar({
               onClick={onRefreshGraph}
               className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/8 text-xs font-semibold text-white/80 transition hover:bg-white/14 hover:text-white active:scale-95"
             >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="opacity-70"><circle cx="3" cy="8" r="2" fill="currentColor"/><circle cx="13" cy="3" r="2" fill="currentColor"/><circle cx="13" cy="13" r="2" fill="currentColor"/><line x1="5" y1="7.2" x2="11" y2="3.8" stroke="currentColor" strokeWidth="1.4"/><line x1="5" y1="8.8" x2="11" y2="12.2" stroke="currentColor" strokeWidth="1.4"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="opacity-80">
+                <circle cx="5" cy="12" r="2.5" fill="currentColor"/>
+                <circle cx="19" cy="5" r="2.5" fill="currentColor"/>
+                <circle cx="19" cy="19" r="2.5" fill="currentColor"/>
+                <path d="M7.5 11L16.5 6M7.5 13L16.5 18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
               Refresh Graph
             </button>
             <button
               onClick={onOpenControls}
               className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/8 text-xs font-semibold text-white/80 transition hover:bg-white/14 hover:text-white active:scale-95"
             >
-              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="opacity-70"><path d="M2 4h12M2 8h8M2 12h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/><circle cx="13" cy="8" r="2" fill="currentColor"/><circle cx="10" cy="12" r="2" fill="currentColor"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="opacity-80">
+                <circle cx="6" cy="7" r="2" fill="currentColor"/>
+                <circle cx="6" cy="17" r="2" fill="currentColor"/>
+                <circle cx="18" cy="12" r="2" fill="currentColor"/>
+                <path d="M8 7h12M8 17h12M3 12h12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+              </svg>
               Controls
             </button>
           </div>
@@ -110,9 +137,10 @@ export default function TopBar({
   );
 }
 
-function StatPill({ label, value, mono = false, truncate = false }) {
+function StatPill({ label, value, mono = false, truncate = false, icon }) {
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/8 px-3 py-1 text-[11px] font-semibold text-white/70 backdrop-blur-sm">
+      {icon && <span className="text-white/40">{icon}</span>}
       <span className="text-white/40">{label}</span>
       <span className={`font-bold text-white/90 ${mono ? "font-mono" : ""} ${truncate ? "max-w-[160px] truncate" : "tabular-nums"}`}>
         {value}

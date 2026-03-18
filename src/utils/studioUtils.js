@@ -612,7 +612,7 @@ export function toMillis(value) {
 
 export function compareThreadsBySort(a, b, threadSort) {
   if (threadSort === "time_desc") {
-    const diff = (b.lastActivityAtMs ?? 0) - (a.lastActivityAtMs ?? 0);
+    const diff = (b.campaignId ?? 0) - (a.campaignId ?? 0);
     return diff !== 0 ? diff : a.threadId.localeCompare(b.threadId);
   }
   return a.threadId.localeCompare(b.threadId);
