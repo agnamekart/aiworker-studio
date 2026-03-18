@@ -50,7 +50,7 @@ export default function ThreadPanel({
         </div>
         <div className="flex items-center justify-between gap-2">
           <select value={threadSort} onChange={(e) => setThreadSort(e.target.value)} className="flex-1 text-xs">
-            <option value="time_desc">Campaign ↓</option>
+            <option value="time_desc">Latest</option>
             <option value="id_asc">ID A–Z</option>
           </select>
           <span className="shrink-0 text-[11px] text-slate-400">{filteredThreads.length} shown</span>
