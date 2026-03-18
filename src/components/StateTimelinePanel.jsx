@@ -1,16 +1,16 @@
 import ParsedValue from "./ParsedValue";
 import { shortenId } from "../utils/studioUtils";
 
-/* ─── status helpers ─────────────────────────────────────────── */
+/* ─── status config ──────────────────────────────────────────── */
 const STATUS = {
-  FAILED:    { border: "border-l-rose-400",    badge: "border-rose-200 bg-rose-50 text-rose-700",         circle: "bg-rose-100 text-rose-600" },
-  COMPLETED: { border: "border-l-emerald-400", badge: "border-emerald-200 bg-emerald-50 text-emerald-700", circle: "bg-emerald-100 text-emerald-600" },
-  STARTED:   { border: "border-l-sky-400",     badge: "border-sky-200 bg-sky-50 text-sky-700",            circle: "bg-sky-100 text-sky-600" },
-  RUNNING:   { border: "border-l-sky-400",     badge: "border-sky-200 bg-sky-50 text-sky-700",            circle: "bg-sky-100 text-sky-600" },
-  SKIPPED:   { border: "border-l-amber-400",   badge: "border-amber-200 bg-amber-50 text-amber-700",      circle: "bg-amber-100 text-amber-600" },
-  PAUSED:    { border: "border-l-amber-400",   badge: "border-amber-200 bg-amber-50 text-amber-700",      circle: "bg-amber-100 text-amber-600" },
+  FAILED:    { bar: "bg-rose-400",    badge: "border-rose-200 bg-rose-50 text-rose-700",         circle: "bg-rose-500 text-white",    dot: "bg-rose-400",    glow: "shadow-[0_0_0_3px_rgba(251,113,133,0.2)]" },
+  COMPLETED: { bar: "bg-emerald-400", badge: "border-emerald-200 bg-emerald-50 text-emerald-700", circle: "bg-emerald-500 text-white", dot: "bg-emerald-400", glow: "shadow-[0_0_0_3px_rgba(52,211,153,0.2)]" },
+  STARTED:   { bar: "bg-sky-400",     badge: "border-sky-200 bg-sky-50 text-sky-700",            circle: "bg-sky-500 text-white",     dot: "bg-sky-400",     glow: "shadow-[0_0_0_3px_rgba(56,189,248,0.2)]" },
+  RUNNING:   { bar: "bg-sky-400",     badge: "border-sky-200 bg-sky-50 text-sky-700",            circle: "bg-sky-500 text-white",     dot: "bg-sky-400",     glow: "shadow-[0_0_0_3px_rgba(56,189,248,0.2)]" },
+  SKIPPED:   { bar: "bg-amber-400",   badge: "border-amber-200 bg-amber-50 text-amber-700",      circle: "bg-amber-400 text-white",   dot: "bg-amber-400",   glow: "shadow-[0_0_0_3px_rgba(251,191,36,0.2)]" },
+  PAUSED:    { bar: "bg-amber-400",   badge: "border-amber-200 bg-amber-50 text-amber-700",      circle: "bg-amber-400 text-white",   dot: "bg-amber-400",   glow: "shadow-[0_0_0_3px_rgba(251,191,36,0.2)]" },
 };
-const DEFAULT_STATUS = { border: "border-l-slate-300", badge: "border-slate-200 bg-slate-50 text-slate-600", circle: "bg-slate-100 text-slate-500" };
+const DEFAULT_STATUS = { bar: "bg-slate-300", badge: "border-slate-200 bg-slate-50 text-slate-600", circle: "bg-slate-400 text-white", dot: "bg-slate-300", glow: "" };
 function getStatus(s) { return STATUS[String(s || "").toUpperCase()] ?? DEFAULT_STATUS; }
 
 /* ─── type helpers for overview cards ───────────────────────── */
@@ -78,7 +78,7 @@ export default function StateTimelinePanel({
         <Chip color="slate">{selectedStatePosition || 0}/{timelineEntries.length || 0}</Chip>
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
           <div
-            className="h-full bg-gradient-to-r from-sky-400 to-emerald-400 transition-all duration-500"
+            className="h-full bg-gradient-to-r from-sky-400 to-blue-500 transition-all duration-500"
             style={{ width: `${progressPct}%` }}
           />
         </div>
@@ -86,74 +86,90 @@ export default function StateTimelinePanel({
       </div>
 
       {/* ── Two-column body ── */}
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[264px_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[280px_minmax(0,1fr)]">
 
-        {/* Timeline sidebar */}
-        <aside className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
-          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-3 py-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Execution States</span>
+        {/* ── Timeline sidebar ── */}
+        <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+
+          {/* Sidebar header */}
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-2.5">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Execution States</span>
             <span className="badge border-slate-200 bg-white text-slate-500">{timelineEntries.length}</span>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto p-2 space-y-1">
+          {/* Entry list */}
+          <div className="min-h-0 flex-1 overflow-auto px-2 py-2 space-y-1">
             {timelineEntries.map((entry, index) => {
               const active = typeof entry.snapshotIndex === "number" && selectedStateIndex === entry.snapshotIndex;
               const canSelect = typeof entry.snapshotIndex === "number";
               const s = getStatus(entry.status);
+              const isLast = index === timelineEntries.length - 1;
 
               return (
-                <button
-                  key={entry.key}
-                  className={[
-                    "relative w-full rounded-xl border-l-[3px] px-2 py-2 text-left outline-none transition-all duration-100",
-                    s.border,
-                    canSelect ? "cursor-pointer" : "cursor-default",
-                    active
-                      ? "border border-sky-200 border-l-sky-400 bg-sky-50/70 shadow-sm"
-                      : "border border-transparent hover:border-slate-200 hover:bg-slate-50"
-                  ].join(" ")}
-                  onClick={() => canSelect && onSelectState(entry.snapshotIndex)}
-                >
-                  {active && (
-                    <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-sky-500" />
-                  )}
-
-                  {/* Step number + node name */}
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${s.circle}`}>
+                <div key={entry.key} className="relative flex gap-2.5">
+                  {/* Timeline track */}
+                  <div className="flex shrink-0 flex-col items-center pt-2.5">
+                    <span className={[
+                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[9px] font-bold transition-all duration-150",
+                      s.circle,
+                      active ? s.glow : ""
+                    ].join(" ")}>
                       {index + 1}
                     </span>
-                    <span className="truncate text-xs font-semibold text-slate-800">{entry.node}</span>
+                    {!isLast && <span className="mt-1 w-px flex-1 bg-slate-100" />}
                   </div>
 
-                  {/* Status + meta */}
-                  <div className="flex flex-wrap items-center gap-1 pl-7">
-                    <span className={`badge text-[9px] ${s.badge}`}>{entry.status || "UNKNOWN"}</span>
-                    {entry.source === "nodeExecution" && (
-                      <span className="badge border-slate-200 bg-slate-50 text-[9px] text-slate-500">
-                        ×{entry.attemptNo ?? 1}
-                        {typeof entry.rowsWritten === "number" ? ` · ${entry.rowsWritten}r` : ""}
+                  {/* Card */}
+                  <button
+                    className={[
+                      "mb-1 min-w-0 flex-1 rounded-xl px-3 py-2.5 text-left outline-none transition-all duration-150",
+                      canSelect ? "cursor-pointer" : "cursor-default",
+                      active
+                        ? "bg-sky-50 ring-1 ring-sky-200 shadow-sm"
+                        : "bg-slate-50/60 hover:bg-slate-100/80"
+                    ].join(" ")}
+                    onClick={() => canSelect && onSelectState(entry.snapshotIndex)}
+                  >
+                    {/* Node name */}
+                    <div className="flex items-center justify-between gap-1.5 mb-1.5">
+                      <span className={[
+                        "truncate text-xs font-bold",
+                        active ? "text-sky-800" : "text-slate-700"
+                      ].join(" ")}>
+                        {entry.node}
                       </span>
-                    )}
-                  </div>
+                      {active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500" />}
+                    </div>
 
-                  {/* Error or checkpoint */}
-                  {entry.errorMessage ? (
-                    <p className="mt-1 pl-7 text-[10px] font-medium leading-snug text-rose-600 line-clamp-2">
-                      {entry.errorMessage}
-                    </p>
-                  ) : (
-                    <p className="mt-0.5 pl-7 font-mono text-[9px] text-slate-400">
-                      {shortenId(entry.checkpoint || "–", 8)}
-                    </p>
-                  )}
-                </button>
+                    {/* Status + meta row */}
+                    <div className="flex flex-wrap items-center gap-1">
+                      <span className={`badge text-[9px] ${s.badge}`}>{entry.status || "UNKNOWN"}</span>
+                      {entry.source === "nodeExecution" && (
+                        <span className="badge border-slate-200 bg-white text-[9px] text-slate-400">
+                          ×{entry.attemptNo ?? 1}
+                          {typeof entry.rowsWritten === "number" ? ` · ${entry.rowsWritten}r` : ""}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Error or checkpoint */}
+                    {entry.errorMessage ? (
+                      <p className="mt-1.5 text-[10px] font-medium leading-snug text-rose-600 line-clamp-2">
+                        {entry.errorMessage}
+                      </p>
+                    ) : (
+                      <p className="mt-1 font-mono text-[9px] text-slate-400">
+                        {shortenId(entry.checkpoint || "–", 8)}
+                      </p>
+                    )}
+                  </button>
+                </div>
               );
             })}
 
             {!selectedExecution && (
-              <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-                <span className="text-2xl opacity-30">⏱</span>
+              <div className="flex flex-col items-center justify-center gap-2 py-12 text-center">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-100 bg-slate-50 text-xl opacity-40">⏱</span>
                 <p className="text-xs text-slate-400">Select a thread to inspect states</p>
               </div>
             )}
@@ -161,19 +177,26 @@ export default function StateTimelinePanel({
         </aside>
 
         {/* ── State detail ── */}
-        <article className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <article className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
           {/* Article header */}
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-3">
-            <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-800">
-                {selectedState?.node || "State Payload"}
-              </h3>
-              {selectedState?.checkpoint && (
-                <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400">
-                  {selectedState.checkpoint}
-                </p>
+            <div className="min-w-0 flex items-center gap-2.5">
+              {selectedState && (
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${getStatus(selectedState.status).circle}`}>
+                  {(selectedStatePosition || 0)}
+                </span>
               )}
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-slate-800">
+                  {selectedState?.node || "State Payload"}
+                </h3>
+                {selectedState?.checkpoint && (
+                  <p className="mt-0.5 truncate font-mono text-[10px] text-slate-400">
+                    {selectedState.checkpoint}
+                  </p>
+                )}
+              </div>
             </div>
             {selectedState && (
               <button
@@ -188,7 +211,7 @@ export default function StateTimelinePanel({
 
           {selectedState ? (
             <>
-              {/* Scrollable section tabs */}
+              {/* Section tabs */}
               <div className="shrink-0 border-b border-slate-100 bg-slate-50/60">
                 <div className="flex gap-0.5 overflow-x-auto px-3 py-1.5">
                   {stateSections.map((s) => {
