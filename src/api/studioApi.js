@@ -100,8 +100,8 @@ function createApiError({ data, fallbackMessage, responseStatus }) {
 }
 
 export const studioApi = {
-  loadStudioState() {
-    return request("/init", { method: "GET" });
+  loadStudioState(params = {}) {
+    return request(`/init${buildQuery(params)}`, { method: "GET" });
   },
 
   fetchGraphMermaid() {

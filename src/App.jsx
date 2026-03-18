@@ -34,6 +34,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [threadFilter, setThreadFilter] = useState("");
   const [threadSort, setThreadSort] = useState("time_desc");
+  const [pagination, setPagination] = useState({ page: 0, size: 10, totalCount: 0, totalPages: 0 });
 
   const [selectedThreadId, setSelectedThreadId] = useState("");
   const [selectedStateIndex, setSelectedStateIndex] = useState(0);
@@ -500,17 +501,27 @@ export default function App() {
     }
   }
 
-  async function loadStudioState() {
+  function sortToApiParams(sort) {
+    if (sort === "id_asc") return { sortBy: "thread_name", sortDir: "asc" };
+    return { sortBy: "latest_saved_at", sortDir: "desc" };
+  }
+
+  async function loadStudioState(pageOverride, sortOverride) {
+    const page = pageOverride ?? 0;
+    const sort = sortToApiParams(sortOverride ?? threadSort);
     setLoading(true);
     setStatus({ type: "neutral", message: "Loading threads and state history..." });
 
     try {
-      const payload = await studioApi.loadStudioState();
+      const payload = await studioApi.loadStudioState({ page, size: 10, ...sort });
       const normalizedThreads = (Array.isArray(payload.threads) ? payload.threads : [])
         .map(normalizeThread)
         .filter(Boolean);
 
       setThreads(normalizedThreads);
+      if (payload.pagination) {
+        setPagination(payload.pagination);
+      }
 
       if (normalizedThreads.length > 0) {
         const preferred = normalizedThreads.some((thread) => thread.threadId === selectedThreadId)
@@ -520,9 +531,10 @@ export default function App() {
         setSelectedThreadId(preferred);
         setSelectedStateIndex(0);
 
+        const { totalCount, totalPages } = payload.pagination || {};
         setStatus({
           type: "success",
-          message: `Loaded ${normalizedThreads.length} thread(s) from studio checkpoint history.`
+          message: `Loaded ${normalizedThreads.length} thread(s) (page ${page + 1}${totalPages ? ` of ${totalPages}` : ""}, ${totalCount ?? "?"} total).`
         });
       } else {
         setSelectedThreadId("");
@@ -533,6 +545,15 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSortChange(newSort) {
+    setThreadSort(newSort);
+    loadStudioState(0, newSort);
+  }
+
+  function goToPage(page) {
+    loadStudioState(page, threadSort);
   }
 
   async function hydrateFromSelectedThread() {
@@ -909,7 +930,9 @@ export default function App() {
           threadFilter={threadFilter}
           threadSort={threadSort}
           setThreadFilter={setThreadFilter}
-          setThreadSort={setThreadSort}
+          setThreadSort={handleSortChange}
+          pagination={pagination}
+          onGoToPage={goToPage}
         />
 
         <StateTimelinePanel
@@ -1051,32 +1074,43 @@ function ResumeConflictModal({
   const disableActions = Boolean(busyAction);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/45 p-3 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={onClose}>
       <section
-        className="panel mx-auto mt-20 w-full max-w-[720px] border-slate-200 bg-white"
+        className="panel w-full max-w-[600px] border-slate-200 bg-white shadow-strong"
         onClick={(event) => event.stopPropagation()}
       >
-        <h3 className="text-xl font-bold text-slate-800">Active Execution Detected</h3>
-        <p className="mt-2 text-sm text-slate-600">
-          The resume request failed because another execution is active.
-        </p>
+        {/* Header */}
+        <div className="mb-4 flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-amber-200 bg-amber-50 text-lg">
+            ⚠
+          </span>
+          <div>
+            <h3 className="text-base font-bold text-slate-800">Active Execution Detected</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Resume failed — another execution is currently active.
+            </p>
+          </div>
+        </div>
+
         {conflict.activeExecutionId ? (
-          <p className="mt-1 text-xs text-slate-500">Execution ID: {conflict.activeExecutionId}</p>
+          <div className="mb-3 inline-flex items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-semibold text-sky-700">
+            Execution ID: {conflict.activeExecutionId}
+          </div>
         ) : (
-          <p className="mt-1 text-xs text-amber-700">
-            Execution ID could not be detected from backend error.
-          </p>
+          <p className="mb-3 text-xs text-amber-600">Execution ID could not be detected from backend error.</p>
         )}
 
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-600">Backend message</p>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Backend Message</p>
           {conflict.code && (
-            <p className="mt-1 text-[11px] text-slate-600">Code: {conflict.code}</p>
+            <span className="mb-1.5 inline-block rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+              {conflict.code}
+            </span>
           )}
-          <p className="mt-1 break-words text-xs text-slate-700">{conflict.message}</p>
+          <p className="break-words text-xs text-slate-700">{conflict.message}</p>
           {Array.isArray(conflict.allowedStartNodes) && conflict.allowedStartNodes.length > 0 && (
-            <p className="mt-1 break-words text-xs text-slate-600">
-              Allowed start nodes: {conflict.allowedStartNodes.join(", ")}
+            <p className="mt-1.5 text-xs text-slate-500">
+              Allowed start nodes: <span className="font-medium">{conflict.allowedStartNodes.join(", ")}</span>
             </p>
           )}
         </div>
@@ -1086,18 +1120,18 @@ function ResumeConflictModal({
             Close
           </button>
           <button
-            className="rounded-xl border border-rose-600 bg-rose-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl border border-rose-500 bg-rose-500 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
             disabled={disableActions || !conflict.activeExecutionId}
             onClick={onCancelAndRetry}
           >
-            {busyAction === "cancel_retry" ? "Cancelling..." : "Cancel active execution and retry resume"}
+            {busyAction === "cancel_retry" ? "Cancelling…" : "Cancel & Retry Resume"}
           </button>
           <button
-            className="rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50 active:scale-95"
             disabled={disableActions}
             onClick={onForceRerun}
           >
-            {busyAction === "force_rerun" ? "Retrying..." : "Force rerun instead"}
+            {busyAction === "force_rerun" ? "Retrying…" : "Force Rerun Instead"}
           </button>
         </div>
       </section>
